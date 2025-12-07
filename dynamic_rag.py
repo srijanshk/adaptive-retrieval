@@ -199,21 +199,6 @@ Strict rules for integration:
 5. Never copy numbers or solutions—adapt abstractly to avoid errors.
 """
 
-VERIFICATION_PROMPT_TEMPLATE = """
-CRITICAL VERIFICATION: Original problem: {problem}
-
-Your tentative answer: <answer>{previous_answer}</answer>
-
-Re-solve from scratch without retrieval:
-1. Restate the problem.
-2. Derive the solution step-by-step using alternative reasoning if possible.
-3. Check for errors in logic, arithmetic, or assumptions.
-4. If the answer matches, output: <answer>{previous_answer}</answer> and say 'VERIFIED'.
-5. If there's an error, output: <answer>NEW_VALUE</answer> and say 'CORRECTION: [brief explanation]'.
-
-Be thorough—show all calculations explicitly.
-"""
-
 CONSISTENCY_PROMPT = """
 You have completed a solution using retrieved information.
 
@@ -608,87 +593,9 @@ def solve(problem: str,
     retrieval_triggered = False
     retrieval_executed = False
     answer_content: Optional[str] = None
-    verification_needed = False
-    verification_requested = False
-    verification_used = False
-    verification_blocks = 0
-    verification_successes = 0
-    verification_failures = 0
     consistency_used = False
     consistency_changed = False
     consistency_raw: Optional[str] = None
-
-    def run_verification_step(current_answer: str) -> Tuple[str, bool]:
-        nonlocal prompt, verification_used, verification_blocks, verification_successes, verification_failures
-
-        prev_answer = (current_answer or "").strip()
-        retry_prompt = VERIFICATION_PROMPT_TEMPLATE.format(
-            problem=problem,
-            previous_answer=prev_answer.replace('{', '{{').replace('}', '}}') or "the current answer"
-        )
-
-        for attempt in range(2):
-            verification_used = True
-            verification_blocks += 1
-
-            prompt = append_block(prompt, "user", retry_prompt)
-            transcript.append(
-                "<verification_request attempt=\"{attempt}\">\n".format(attempt=attempt + 1)
-                + retry_prompt.strip()
-                + "\n</verification_request>"
-            )
-
-            verify_gen = generate_with_stop(
-                model=engine,
-                tokenizer=tokenizer,
-                prompt=prompt,
-                max_new_tokens=answer_gen_tokens,
-                stop_tags=["answer"],
-                temperature=0,
-            )
-            verify_gen = sanitize_headers(verify_gen)
-
-            transcript.append(
-                "<verification_response attempt=\"{attempt}\">\n".format(attempt=attempt + 1)
-                + verify_gen
-                + "\n</verification_response>"
-            )
-            prompt = append_block(prompt, "assistant", verify_gen)
-
-            ans_verify, _ = parse_tag(verify_gen, "answer")
-            candidate = (ans_verify or "").strip() if ans_verify is not None else ""
-            lower_text = verify_gen.lower()
-            has_digits = bool(re.search(r"\d", candidate))
-
-            if candidate:
-                if candidate == prev_answer:
-                    if "verified" in lower_text:
-                        verification_successes += 1
-                        return candidate, True
-                    else:
-                        retry_prompt = (
-                            "You did not explicitly show a full recomputation or state 'Verified'. "
-                            f"The target answer remains <answer>{prev_answer}</answer>. "
-                            "Re-derive the solution step-by-step, display all arithmetic, and conclude with 'Verified' if it matches."
-                        )
-                        continue
-                else:
-                    if "correction" in lower_text or has_digits:
-                        verification_successes += 1
-                        return candidate, True
-                    retry_prompt = (
-                        f"You proposed a different value <answer>{candidate}</answer> without marking it as a correction. "
-                        "If the answer changes, explicitly say 'Correction', show the recalculated steps, and provide the corrected <answer>."
-                    )
-                    prev_answer = candidate
-                    continue
-
-            retry_prompt = (
-                "Your verification response was incomplete. Recompute from scratch, show the steps, and finish with a single <answer>."
-            )
-
-        verification_failures += 1
-        return current_answer, False
 
     for turn in range(max_tool_calls):
         gen = generate_with_stop(
@@ -708,15 +615,6 @@ def solve(problem: str,
             if inner:
                 prompt = append_block(prompt, "assistant", gen)
                 answer_content = inner
-                if verification_needed and not verification_requested:
-                    answer_content, verify_ok = run_verification_step(answer_content)
-                    verification_requested = True
-                    verification_needed = False
-                    if not verify_ok:
-                        # mark for potential follow-up by consistency check
-                        pass
-                else:
-                    verification_needed = False
                 break
             else:
                 prompt = append_block(
@@ -790,9 +688,6 @@ def solve(problem: str,
                 "docs": docs_stats,
             })
 
-            verification_needed = True
-            verification_requested = False
-
             if inject_text:
                 injection_prompt = INTEGRATE_PROMPT.format(
                     injected_text=inject_text,
@@ -838,10 +733,6 @@ def solve(problem: str,
             if inner2:
                 answer_content = inner2
                 prompt = append_block(prompt, "assistant", final_clean)
-
-    if retrieval_executed and answer_content and verification_blocks == 0:
-        answer_content, _ = run_verification_step(answer_content)
-        verification_requested = True
 
     queries_used = [t.get("query", t.get("query_raw")) for t in trace]
 
@@ -924,10 +815,6 @@ def solve(problem: str,
         "injections_made": trace,
         "retrieval_count": len(trace),
         "total_steps": len(transcript),
-        "verification_used": verification_used,
-        "verification_success": verification_successes,
-        "verification_failure": verification_failures,
-        "verify_blocks": verification_blocks,
         "consistency_used": consistency_used,
         "consistency_changed": consistency_changed,
         "consistency_answer_raw": consistency_raw,

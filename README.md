@@ -1,6 +1,7 @@
 # Adaptive Retrieval helps Reasoning in LLMs - but mostly if it's not used
 
 **Master Thesis:** *Enhancing LLMs reasoning capabilities by including retrieval*
+
 **Workshop Paper:** *Adaptive Retrieval helps Reasoning in LLMs - but mostly if it's not used*  
 **Authors:** Srijan Shakya, Anamaria-Roberta Hartl, Sepp Hochreiter, Korbinian Pöppel  
 **Affiliation:** Institute of Machine Learning, Johannes Kepler University Linz, Austria
@@ -552,8 +553,9 @@ Nothing after `</answer>`.
 
 ```
 You are an expert mathematician.
-Think step-by-step.
-Write every reasoning step inside `<think> … </think>` blocks.
+
+Think step-by-step.  
+Write every reasoning step inside '<think> ... </think>' blocks. 
 
 If you need to look up a formula, definition, or problems, 
 you can use the <search> tool by writing a search query inside 
@@ -566,12 +568,11 @@ After retrieval, you may:
 
 After the search results are returned, continue your step-by-step thinking.
 
-When you are ready to give the final answer, use the <answer> tag like 
-this: <answer>your final answer</answer>
+When you are completely done, produce **exactly one**
+    <answer> your final answer </answer>
+    
+Nothing after `</answer>`.
 ```
-
-See `WORKFLOW.md` and paper appendix for complete prompt templates.
-
 ## 📊 Expected Results
 
 Based on our paper experiments:
